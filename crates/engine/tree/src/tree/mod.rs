@@ -7,7 +7,7 @@ use crate::{
         cached_state::CachedStateProvider, executor::WorkloadExecutor, metrics::EngineApiMetrics,
     },
 };
-use alloy_consensus::BlockHeader;
+use alloy_consensus::{BlockHeader, BlockHeaderMut};
 use alloy_eips::{merge::EPOCH_SLOTS, BlockNumHash, NumHash};
 use alloy_evm::block::BlockExecutor;
 use alloy_primitives::{Address, B256};
@@ -2104,7 +2104,7 @@ where
 
     fn insert_block_inner(
         &mut self,
-        block: RecoveredBlock<N::Block>,
+        mut block: RecoveredBlock<N::Block>,
     ) -> Result<InsertPayloadOk, (InsertBlockErrorKind, RecoveredBlock<N::Block>)> {
         /// A helper macro that returns the block in case there was an error
         macro_rules! ensure_ok {
@@ -2370,15 +2370,11 @@ where
 
         // ensure state root matches
         if state_root != block.header().state_root() {
-            // call post-block hook
-            self.on_invalid_block(&parent_block, &block, &output, Some((&trie_output, state_root)));
-            return Err((
-                ConsensusError::BodyStateRootDiff(
-                    GotExpected { got: state_root, expected: block.header().state_root() }.into(),
-                )
-                .into(),
-                block,
-            ))
+            // update the `state_root` field and replace `block` with the updated one.
+            let mut header = block.header().clone();
+            header.set_state_root(state_root);
+            let sealed_block = SealedBlock::seal_parts(header, block.body().clone());
+            block = RecoveredBlock::new_sealed(sealed_block, block.senders().to_vec());
         }
 
         // terminate prewarming task with good state output
