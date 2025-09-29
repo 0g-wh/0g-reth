@@ -8275,6 +8275,7 @@ version = "1.5.1"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
+ "alloy-evm",
  "alloy-primitives",
  "alloy-rpc-types-engine",
  "reth-basic-payload-builder",

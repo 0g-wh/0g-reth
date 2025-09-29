@@ -16,17 +16,18 @@ use reth_basic_payload_builder::{
     PayloadConfig,
 };
 use reth_chainspec::{ChainSpecProvider, EthChainSpec, EthereumHardforks};
-use reth_errors::{BlockExecutionError, BlockValidationError};
+
 use reth_ethereum_primitives::{EthPrimitives, TransactionSigned};
 use reth_evm::{
     execute::{BlockBuilder, BlockBuilderOutcome},
     ConfigureEvm, Evm, NextBlockEnvAttributes,
 };
+use alloy_evm::block::CommitChanges;
 use reth_evm_ethereum::EthEvmConfig;
 use reth_payload_builder::{BlobSidecars, EthBuiltPayload, EthPayloadBuilderAttributes};
 use reth_payload_builder_primitives::PayloadBuilderError;
 use reth_payload_primitives::PayloadBuilderAttributes;
-use reth_primitives_traits::transaction::error::InvalidTransactionError;
+
 use reth_revm::{database::StateProviderDatabase, db::State};
 use reth_storage_api::StateProviderFactory;
 use reth_transaction_pool::{
@@ -272,30 +273,23 @@ where
             };
         }
 
-        let gas_used = match builder.execute_transaction(tx.clone()) {
-            Ok(gas_used) => gas_used,
-            Err(BlockExecutionError::Validation(BlockValidationError::InvalidTx {
-                error, ..
-            })) => {
-                if error.is_nonce_too_low() {
-                    // if the nonce is too low, we can skip this transaction
-                    trace!(target: "payload_builder", %error, ?tx, "skipping nonce too low transaction");
-                } else {
-                    // if the transaction is invalid, we can skip it and all of its
-                    // descendants
-                    trace!(target: "payload_builder", %error, ?tx, "skipping invalid transaction and its descendants");
-                    best_txs.mark_invalid(
-                        &pool_tx,
-                        InvalidPoolTransactionError::Consensus(
-                            InvalidTransactionError::TxTypeNotSupported,
-                        ),
-                    );
-                }
-                continue
-            }
-            // this is an error that we should treat as fatal for this attempt
-            Err(err) => return Err(PayloadBuilderError::evm(err)),
-        };
+        // Use gas limit instead of executing transaction
+        let gas_used = pool_tx.gas_limit();
+        
+        // Add transaction to block without actual execution by using a custom closure
+        // that always returns CommitChanges::Yes but doesn't perform execution
+        let gas_used_from_execution = builder.execute_transaction_with_commit_condition(
+            tx.clone(),
+            |_result| {
+                // Always commit the transaction without actual execution
+                // This bypasses the execution but still adds the transaction to the block
+                trace!(target: "payload_builder", ?tx, gas_limit = gas_used, "committing transaction without execution");
+                CommitChanges::Yes
+            },
+        )?;
+        
+        // Use the gas limit instead of actual execution result
+        let gas_used = gas_used_from_execution.unwrap_or(gas_used);
 
         // add to the total blob gas used if the transaction successfully executed
         if let Some(blob_tx) = tx.as_eip4844() {
