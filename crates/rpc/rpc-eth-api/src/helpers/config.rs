@@ -91,7 +91,7 @@ where
 
         // Short-circuit if Cancun is not active.
         if !chain_spec.is_cancun_active_at_timestamp(latest.timestamp()) {
-            return Err(RethError::msg("cancun has not been activated"))
+            return Err(RethError::msg("cancun has not been activated"));
         }
 
         let current_precompiles =
@@ -166,7 +166,7 @@ fn evm_to_precompiles_map(
     precompiles
         .addresses()
         .filter_map(|address| {
-            Some((precompile_to_str(precompiles.get(address)?.precompile_id()), *address))
+            Some((precompile_to_str(precompiles.get_stateless(address)?.precompile_id()), *address))
         })
         .collect()
 }
