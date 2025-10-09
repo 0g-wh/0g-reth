@@ -111,7 +111,7 @@ pub fn prague_custom() -> &'static Precompiles {
             address!("0x0000000000000000000000000000000000000999"),
             |_, _| PrecompileResult::Ok(PrecompileOutput::new(0, Bytes::new())),
         );
-        precompiles.extend([precompile]);
+        precompiles.extend_stateless([precompile]);
         precompiles
     })
 }
